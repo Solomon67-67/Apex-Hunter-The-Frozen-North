@@ -4,7 +4,21 @@
   <title>Apex Huntter</title>
 </head>
   <body>
-    <div id="root"></div> <script type="module">
+    <div id="root"></div>
+    <script type="importmap">
+      {
+        "imports": {
+           "react': "https://esm.sh/react@18",
+           "react-dom":https://esm.sh/react-dom@18
+           "three": "https://esm.sh/three@0.160.0",
+           "lucide-react": "https://esm.sh/lucide-react",
+           "firebase/app": 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js"
+           "firebase/firestore":https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js",
+           "firebase/auth": "https://www.gstatic.cpm/firebasejs/10.7.1/firebase-auth.js"
+       }
+    }
+    </script>
+    <script type="module">
 import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
