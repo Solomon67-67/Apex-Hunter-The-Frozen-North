@@ -2,298 +2,446 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Apex Hunter: Frozen North</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Apex Hunter: The Long Night</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Inter', sans-serif; }
-        #crosshair {
-            position: fixed; top: 50%; left: 50%;
-            width: 10px; height: 10px;
-            border: 2px solid rgba(255,255,255,0.5);
-            border-radius: 50%;
-            transform: translate(-50%, -50%);
-            pointer-events: none;
+        @import url('https://fonts.googleapis.com/css2?family=Crimson+Text:ital,wght@1,600&family=Inter:wght@400;900&display=swap');
+        body { margin: 0; overflow: hidden; background-color: #020205; font-family: 'Inter', sans-serif; user-select: none; touch-action: none; }
+        canvas { display: block; }
+        .ui-overlay { pointer-events: none; transition: all 0.3s; }
+        .interactive { pointer-events: auto; }
+        .blood-vignette {
+            position: fixed; inset: 0;
+            box-shadow: inset 0 0 100px rgba(150,0,0,0);
+            pointer-events: none; z-index: 5;
+            transition: box-shadow 0.5s;
         }
-        .survival-ui {
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+        .low-health { box-shadow: inset 0 0 150px rgba(255,0,0,0.6); animation: heartbeat 1.5s infinite; }
+        @keyframes heartbeat { 0%, 100% { opacity: 0.8; } 50% { opacity: 1; } }
+        
+        #joystick-container {
+            position: fixed; bottom: 40px; left: 40px; width: 140px; height: 140px;
+            background: rgba(255,255,255,0.05); border: 2px solid rgba(255,255,255,0.1);
+            border-radius: 50%; display: none; z-index: 20;
+        }
+        #joystick-knob {
+            position: absolute; top: 50%; left: 50%; width: 60px; height: 60px;
+            background: rgba(255,255,255,0.8); border-radius: 50%; transform: translate(-50%, -50%);
+            box-shadow: 0 0 20px rgba(255,255,255,0.2);
         }
     </style>
 </head>
 <body>
 
-    <div id="crosshair"></div>
+    <div id="blood-vignette" class="blood-vignette"></div>
 
     <!-- HUD -->
-    <div id="hud" class="fixed top-0 left-0 w-full p-8 flex justify-between items-start pointer-events-none z-10">
-        <div class="flex flex-col gap-4">
-            <div class="survival-ui">
-                <div class="text-white text-xs uppercase tracking-widest mb-1 opacity-70">Vital Signs</div>
-                <div class="w-48 h-2 bg-black/50 border border-white/20 rounded-full overflow-hidden">
-                    <div id="health-bar" class="h-full bg-red-600 transition-all duration-300" style="width: 100%"></div>
+    <div class="ui-overlay fixed top-0 left-0 w-full p-4 flex justify-between items-start z-10">
+        <div class="space-y-2">
+            <div class="bg-black/60 backdrop-blur-md p-3 rounded border border-white/10 w-48">
+                <div class="flex justify-between text-[10px] text-white/50 uppercase mb-1">
+                    <span>Vitals</span> <span id="health-text">100%</span>
+                </div>
+                <div class="h-1 bg-white/10 rounded-full overflow-hidden">
+                    <div id="health-bar" class="h-full bg-red-600 w-full"></div>
+                </div>
+                <div class="mt-2 flex justify-between text-[10px] text-white/50 uppercase mb-1">
+                    <span>Adrenaline</span> <span id="stamina-text">100%</span>
+                </div>
+                <div class="h-1 bg-white/10 rounded-full overflow-hidden">
+                    <div id="stamina-bar" class="h-full bg-cyan-500 w-full"></div>
                 </div>
             </div>
-            <div class="survival-ui">
-                <div class="text-white text-xs uppercase tracking-widest mb-1 opacity-70">Stamina</div>
-                <div class="w-48 h-2 bg-black/50 border border-white/20 rounded-full overflow-hidden">
-                    <div id="stamina-bar" class="h-full bg-blue-500 transition-all duration-300" style="width: 100%"></div>
-                </div>
+            
+            <div id="resource-ui" class="bg-black/60 backdrop-blur-md p-2 rounded border border-white/10 flex items-center gap-3 w-48">
+                <div class="text-white font-bold"><span id="scrap-count">0</span> <span class="text-[9px] opacity-50">SCRAP</span></div>
+                <div class="text-white font-bold"><span id="ammo-count">0</span> <span class="text-[9px] opacity-50">AMMO</span></div>
             </div>
         </div>
-        <div class="text-right survival-ui">
-            <div id="clock" class="text-3xl text-white font-light tracking-tighter">06:00 AM</div>
-            <div class="text-white text-xs uppercase opacity-60">Day 1 - Temperature: -12°C</div>
+
+        <div class="flex flex-col items-end gap-2">
+            <div id="tutorial-box" class="bg-blue-900/60 backdrop-blur-md p-3 rounded border border-blue-400/50 max-w-[220px]">
+                <div class="text-[9px] text-blue-300 uppercase font-black mb-1">Objective</div>
+                <div id="tutorial-text" class="text-xs text-white leading-tight font-medium">Scavenge yellow scrap to build defenses.</div>
+            </div>
+            <div class="text-right">
+                <div id="distance-ui" class="text-3xl text-white font-black italic tracking-tighter tabular-nums">0m</div>
+                <div class="text-[9px] text-cyan-400 uppercase font-bold">To Extraction</div>
+            </div>
         </div>
     </div>
 
-    <!-- START/OVER SCREENS -->
-    <div id="overlay" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm transition-opacity duration-1000">
-        <div class="text-center max-w-lg p-10 bg-zinc-900/50 border border-white/10 rounded-xl">
-            <h1 id="title" class="text-5xl text-white font-bold tracking-tighter mb-4">APEX HUNTER</h1>
-            <p id="desc" class="text-zinc-400 mb-8 leading-relaxed">
-                You are stranded in the Siberian wilderness. <br>
-                Find the extraction point marked by the blue flare.<br>
-                Watch your stamina. Something is tracking you.
-            </p>
-            <button id="start-btn" class="px-8 py-3 bg-white text-black font-bold uppercase tracking-widest hover:bg-zinc-200 transition-colors">
-                Begin Survival
+    <!-- Mobile Movement -->
+    <div id="joystick-container" class="interactive">
+        <div id="joystick-knob"></div>
+    </div>
+    
+    <!-- Mobile & Universal Action Buttons -->
+    <div class="fixed bottom-6 right-6 flex flex-col gap-4 items-end interactive z-20">
+        <div class="flex gap-4">
+            <button id="crouch-btn" class="w-16 h-16 bg-black/40 backdrop-blur-md border border-white/20 rounded-full text-white text-[10px] font-black uppercase active:scale-90 transition-transform">Crouch</button>
+            <button id="jump-btn" class="w-16 h-16 bg-black/40 backdrop-blur-md border border-white/20 rounded-full text-white text-[10px] font-black uppercase active:scale-90 transition-transform">Jump</button>
+        </div>
+        <div class="flex flex-col gap-3 items-end">
+            <button id="build-btn" class="px-6 py-4 bg-yellow-600/40 backdrop-blur-md border border-yellow-500/50 rounded text-yellow-400 text-xs font-black active:scale-95 transition-all">BUILD WALL (5)</button>
+            <button id="shoot-btn" class="w-24 h-24 bg-red-600/60 backdrop-blur-md border-4 border-red-500/50 rounded-full text-white font-black uppercase active:scale-90 transition-transform shadow-lg shadow-red-900/40">FIRE</button>
+        </div>
+    </div>
+
+    <!-- Start Menu -->
+    <div id="menu" class="fixed inset-0 bg-black/95 z-50 flex items-center justify-center p-6 text-center">
+        <div class="max-w-md">
+            <h1 id="menu-title" style="font-family: 'Crimson Text', serif;" class="text-7xl text-red-700 italic mb-2">The Long Night</h1>
+            <p id="menu-desc" class="text-zinc-500 mb-8 text-xs uppercase tracking-[0.3em]">Survive. Scavenge. Fortify.</p>
+            <div class="text-zinc-500 text-[10px] mb-8 uppercase leading-relaxed hidden sm:block">
+                WASD: Move | Shift: Sprint | Space: Jump<br>
+                C: Crouch | E: Build | F / Click: Shoot
+            </div>
+            <button id="start-btn" class="interactive px-16 py-4 bg-red-900 text-white font-black uppercase tracking-widest hover:bg-red-700 transition-all rounded-sm">
+                Enter Void
             </button>
-            <p class="mt-6 text-[10px] text-zinc-500 uppercase tracking-widest">WASD to Move | Shift to Sprint | Mouse to Look</p>
         </div>
     </div>
 
     <script>
-        let scene, camera, renderer, clock, player, flashLight;
-        let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false, canJump = false, isSprinting = false;
-        let velocity = new THREE.Vector3();
-        let direction = new THREE.Vector3();
-        let health = 100, stamina = 100;
+        let scene, camera, renderer, clock, player, predator;
+        let flare, items = [], walls = [];
         let gameActive = false;
-        let trees = [];
-        let predator;
-        let flare;
+        let isMobile = 'ontouchstart' in window;
+        
+        const input = { forward: 0, right: 0, sprint: false, crouching: false, lookX: 0, lookY: 0, jump: false, shooting: false };
+        const joystick = { active: false, startX: 0, startY: 0, moveX: 0, moveY: 0 };
+        let lastTouchX = null;
+        
+        let stats = { health: 100, stamina: 100, scrap: 0, ammo: 0, tutorialStep: 0 };
 
-        const objects = [];
+        const tutorialMessages = [
+            "Find yellow 'Scrap' glowing in the darkness.",
+            "Gathered enough scrap. Press 'BUILD' for shelter.",
+            "You found a weapon. Locate red 'Ammo'.",
+            "Crouch to hide. Reach the blue 'Extraction' signal.",
+            "The Predator is near. Use walls and fire to stay alive."
+        ];
 
         function init() {
             scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x050508);
-            scene.fog = new THREE.FogExp2(0x050508, 0.015);
+            scene.background = new THREE.Color(0x010103);
+            scene.fog = new THREE.FogExp2(0x010103, 0.05);
 
-            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
             
-            // Lighting
-            const ambientLight = new THREE.AmbientLight(0x404040, 0.5);
-            scene.add(ambientLight);
-
-            const moonLight = new THREE.DirectionalLight(0x334455, 0.5);
-            moonLight.position.set(50, 100, 50);
-            scene.add(moonLight);
-
-            // Flashlight (Attached to camera later)
-            flashLight = new THREE.SpotLight(0xffffff, 1, 40, Math.PI/6, 0.5);
-            scene.add(flashLight);
-            scene.add(flashLight.target);
-
             renderer = new THREE.WebGLRenderer({ antialias: true });
-            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.shadowMap.enabled = true;
             document.body.appendChild(renderer.domElement);
 
             clock = new THREE.Clock();
 
-            createWorld();
-            setupControls();
+            const ambient = new THREE.AmbientLight(0xffffff, 0.04);
+            scene.add(ambient);
             
+            const moon = new THREE.DirectionalLight(0x445588, 0.5);
+            moon.position.set(30, 60, 30);
+            scene.add(moon);
+
+            createWorld();
+            createPlayer();
+            setupInputs();
+            
+            if (isMobile) {
+                document.getElementById('joystick-container').style.display = 'block';
+            }
+
             animate();
         }
 
         function createWorld() {
-            // Ground (Snow)
-            const groundGeo = new THREE.PlaneGeometry(1000, 1000, 100, 100);
+            const groundGeo = new THREE.PlaneGeometry(1000, 1000);
             groundGeo.rotateX(-Math.PI / 2);
-            
-            // Randomize terrain heights
-            const vertices = groundGeo.attributes.position.array;
-            for (let i = 0; i < vertices.length; i += 3) {
-                vertices[i + 1] = Math.random() * 2;
-            }
-            
-            const groundMat = new THREE.MeshStandardMaterial({ 
-                color: 0xe0e8ff,
-                roughness: 0.8,
-                metalness: 0.1
-            });
+            const groundMat = new THREE.MeshStandardMaterial({ color: 0x0a0a0d, roughness: 1 });
             const ground = new THREE.Mesh(groundGeo, groundMat);
             ground.receiveShadow = true;
             scene.add(ground);
 
-            // Trees
-            for (let i = 0; i < 400; i++) {
-                const x = (Math.random() - 0.5) * 400;
-                const z = (Math.random() - 0.5) * 400;
-                if (Math.abs(x) < 10 && Math.abs(z) < 10) continue; // Clear start area
-                createTree(x, z);
+            for (let i = 0; i < 160; i++) {
+                const x = (Math.random() - 0.5) * 450;
+                const z = (Math.random() - 0.5) * 450;
+                if (Math.sqrt(x*x + z*z) < 15) continue;
+                spawnSpookyTree(x, z);
             }
 
-            // Predator (Simple scary shape)
-            const predGeo = new THREE.BoxGeometry(1, 2.5, 1);
-            const predMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
-            predator = new THREE.Mesh(predGeo, predMat);
-            predator.position.set(100, 1.25, 100);
-            scene.add(predator);
+            for(let i=0; i<35; i++) {
+                spawnItem((Math.random()-0.5)*350, (Math.random()-0.5)*350, 'scrap');
+                spawnItem((Math.random()-0.5)*350, (Math.random()-0.5)*350, 'ammo');
+            }
 
-            // Extraction Point (Flare)
-            const flareGeo = new THREE.CylinderGeometry(0.1, 0.1, 5, 8);
+            const flareGeo = new THREE.CylinderGeometry(0.3, 0.3, 80, 6);
             const flareMat = new THREE.MeshBasicMaterial({ color: 0x00ffff });
             flare = new THREE.Mesh(flareGeo, flareMat);
-            flare.position.set((Math.random()-0.5)*300, 2.5, (Math.random()-0.5)*300);
+            flare.position.set((Math.random()-0.5)*380, 40, (Math.random()-0.5)*380);
             scene.add(flare);
+
+            const fl = new THREE.PointLight(0x00ffff, 15, 180);
+            fl.position.copy(flare.position);
+            scene.add(fl);
+
+            const stalkerGroup = new THREE.Group();
+            const body = new THREE.Mesh(new THREE.BoxGeometry(1.2, 3, 0.8), new THREE.MeshBasicMaterial({color:0x000000}));
+            stalkerGroup.add(body);
+            const eyes = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.1, 0.1), new THREE.MeshBasicMaterial({color:0xff0000}));
+            eyes.position.set(0, 1.1, 0.45);
+            stalkerGroup.add(eyes);
             
-            const flareLight = new THREE.PointLight(0x00ffff, 2, 50);
-            flareLight.position.copy(flare.position);
-            scene.add(flareLight);
+            predator = stalkerGroup;
+            predator.position.set(130, 1.5, 130);
+            scene.add(predator);
         }
 
-        function createTree(x, z) {
-            const trunkGeo = new THREE.CylinderGeometry(0.2, 0.4, 4, 8);
-            const trunkMat = new THREE.MeshStandardMaterial({ color: 0x2a1a0a });
-            const trunk = new THREE.Mesh(trunkGeo, trunkMat);
-            trunk.position.set(x, 2, z);
-            trunk.castShadow = true;
-            scene.add(trunk);
-
-            const leavesGeo = new THREE.ConeGeometry(2, 6, 8);
-            const leavesMat = new THREE.MeshStandardMaterial({ color: 0x0a1a0a });
-            const leaves = new THREE.Mesh(leavesGeo, leavesMat);
-            leaves.position.set(x, 5, z);
-            leaves.castShadow = true;
-            scene.add(leaves);
+        function spawnSpookyTree(x, z) {
+            const group = new THREE.Group();
+            const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.3, 10), new THREE.MeshStandardMaterial({color: 0x0a0502}));
+            trunk.position.y = 5;
+            group.add(trunk);
             
-            trees.push({ x, z, radius: 1 });
+            for(let i=0; i<5; i++) {
+                const b = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.08, 5), new THREE.MeshStandardMaterial({color: 0x0a0502}));
+                b.position.y = 5 + (i * 1.5);
+                b.rotation.z = (Math.random() - 0.5) * 3;
+                b.rotation.y = Math.random() * 6;
+                group.add(b);
+            }
+            group.position.set(x, 0, z);
+            scene.add(group);
         }
 
-        function setupControls() {
-            const onKeyDown = (event) => {
-                switch (event.code) {
-                    case 'ArrowUp': case 'KeyW': moveForward = true; break;
-                    case 'ArrowLeft': case 'KeyA': moveLeft = true; break;
-                    case 'ArrowDown': case 'KeyS': moveBackward = true; break;
-                    case 'ArrowRight': case 'KeyD': moveRight = true; break;
-                    case 'ShiftLeft': isSprinting = true; break;
-                }
-            };
-            const onKeyUp = (event) => {
-                switch (event.code) {
-                    case 'ArrowUp': case 'KeyW': moveForward = false; break;
-                    case 'ArrowLeft': case 'KeyA': moveLeft = false; break;
-                    case 'ArrowDown': case 'KeyS': moveBackward = false; break;
-                    case 'ArrowRight': case 'KeyD': moveRight = false; break;
-                    case 'ShiftLeft': isSprinting = false; break;
-                }
-            };
+        function spawnItem(x, z, type) {
+            const geo = new THREE.BoxGeometry(0.6, 0.6, 0.6);
+            const color = type === 'scrap' ? 0xffcc00 : 0xff2222;
+            const item = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color }));
+            item.position.set(x, 0.3, z);
+            item.userData = { type };
+            scene.add(item);
+            items.push(item);
 
-            document.addEventListener('keydown', onKeyDown);
-            document.addEventListener('keyup', onKeyUp);
+            const l = new THREE.PointLight(color, 3, 6);
+            l.position.copy(item.position);
+            scene.add(l);
+            item.userData.light = l;
+        }
 
-            // Mouse Look
-            document.addEventListener('mousemove', (e) => {
-                if (!gameActive) return;
-                camera.rotation.y -= e.movementX * 0.002;
-                const newRotX = camera.rotation.x - e.movementY * 0.002;
-                camera.rotation.x = Math.max(-Math.PI/2.5, Math.min(Math.PI/2.5, newRotX));
+        function createPlayer() {
+            player = new THREE.Group();
+            const body = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 1.4), new THREE.MeshStandardMaterial({color: 0x1a1a1a}));
+            body.position.y = 0.7;
+            player.add(body);
+            
+            const spotLight = new THREE.SpotLight(0xffffff, 2.5, 30, Math.PI/5, 0.6);
+            spotLight.position.set(0, 1.2, 0.2);
+            player.add(spotLight);
+            player.add(spotLight.target);
+            spotLight.target.position.set(0, 1.2, 5);
+            
+            player.position.set(0, 0, 0);
+            scene.add(player);
+        }
+
+        function buildWall() {
+            if(stats.scrap < 5 || !gameActive) return;
+            stats.scrap -= 5;
+            updateUI();
+            
+            const wall = new THREE.Mesh(new THREE.BoxGeometry(5, 4, 0.6), new THREE.MeshStandardMaterial({color: 0x221a15}));
+            const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(player.quaternion);
+            wall.position.copy(player.position).add(forward.multiplyScalar(3.5));
+            wall.position.y = 2;
+            wall.rotation.y = player.rotation.y;
+            scene.add(wall);
+            walls.push(wall);
+            
+            if(stats.tutorialStep === 1) stats.tutorialStep = 2;
+        }
+
+        function shoot() {
+            if(stats.ammo <= 0 || !gameActive) return;
+            stats.ammo--;
+            updateUI();
+            
+            const f = new THREE.PointLight(0xffaa00, 15, 15);
+            const mLoc = new THREE.Vector3(0, 1.2, 1).applyQuaternion(player.quaternion);
+            f.position.copy(player.position).add(mLoc);
+            scene.add(f);
+            setTimeout(() => scene.remove(f), 60);
+
+            const sDir = new THREE.Vector3(0,0,1).applyQuaternion(player.quaternion).normalize();
+            const r = new THREE.Raycaster(player.position, sDir);
+            const hits = r.intersectObject(predator, true);
+            
+            if(hits.length > 0) {
+                predator.position.add(sDir.multiplyScalar(18));
+            }
+        }
+
+        function setupInputs() {
+            window.addEventListener('keydown', e => {
+                if(e.code === 'KeyW') input.forward = 1;
+                if(e.code === 'KeyS') input.forward = -1;
+                if(e.code === 'KeyA') input.right = -1;
+                if(e.code === 'KeyD') input.right = 1;
+                if(e.code === 'ShiftLeft') input.sprint = true;
+                if(e.code === 'KeyC') input.crouching = !input.crouching;
+                if(e.code === 'Space') { if(player.position.y < 0.1) player.userData.vY = 0.22; }
+                if(e.code === 'KeyE') buildWall();
+                if(e.code === 'KeyF') shoot();
+            });
+            window.addEventListener('keyup', e => {
+                if(['KeyW','KeyS'].includes(e.code)) input.forward = 0;
+                if(['KeyA','KeyD'].includes(e.code)) input.right = 0;
+                if(e.code === 'ShiftLeft') input.sprint = false;
+            });
+            window.addEventListener('mousedown', () => { if(gameActive && !isMobile) shoot(); });
+
+            window.addEventListener('mousemove', e => {
+                if(gameActive && !isMobile && document.pointerLockElement) {
+                    input.lookX -= e.movementX * 0.0035;
+                }
             });
 
-            document.body.addEventListener('click', () => {
-                if (!gameActive) return;
-                document.body.requestPointerLock();
+            // Unified Mobile Buttons
+            document.getElementById('build-btn').addEventListener('touchstart', buildWall);
+            document.getElementById('shoot-btn').addEventListener('touchstart', shoot);
+            document.getElementById('crouch-btn').addEventListener('touchstart', () => input.crouching = !input.crouching);
+            document.getElementById('jump-btn').addEventListener('touchstart', () => { if(player.position.y < 0.1) player.userData.vY = 0.22; });
+
+            const jc = document.getElementById('joystick-container');
+            const jk = document.getElementById('joystick-knob');
+            jc.addEventListener('touchstart', e => {
+                joystick.active = true;
+                const r = jc.getBoundingClientRect();
+                joystick.startX = r.left + r.width/2;
+                joystick.startY = r.top + r.height/2;
             });
+            window.addEventListener('touchmove', e => {
+                const t = e.touches[0];
+                if(joystick.active) {
+                    let dx = t.clientX - joystick.startX;
+                    let dy = t.clientY - joystick.startY;
+                    const d = Math.min(60, Math.sqrt(dx*dx + dy*dy));
+                    const a = Math.atan2(dy, dx);
+                    input.right = (Math.cos(a) * d) / 60;
+                    input.forward = -(Math.sin(a) * d) / 60;
+                    jk.style.transform = `translate(calc(-50% + ${Math.cos(a)*d}px), calc(-50% + ${Math.sin(a)*d}px))`;
+                } else if(t.clientX > window.innerWidth / 2) {
+                    const mvX = t.clientX - (lastTouchX || t.clientX);
+                    input.lookX -= mvX * 0.007;
+                    lastTouchX = t.clientX;
+                }
+            }, {passive:false});
+            window.addEventListener('touchend', () => { joystick.active = false; input.right = 0; input.forward = 0; lastTouchX = null; jk.style.transform = 'translate(-50%,-50%)'; });
         }
 
-        function updatePlayer(delta) {
-            if (!gameActive) return;
+        function updateUI() {
+            document.getElementById('scrap-count').innerText = stats.scrap;
+            document.getElementById('ammo-count').innerText = stats.ammo;
+            document.getElementById('health-bar').style.width = stats.health + '%';
+            document.getElementById('stamina-bar').style.width = stats.stamina + '%';
+            document.getElementById('tutorial-text').innerText = tutorialMessages[stats.tutorialStep];
+            
+            const v = document.getElementById('blood-vignette');
+            if(stats.health < 40) v.classList.add('low-health');
+            else v.classList.remove('low-health');
+        }
 
-            const speed = (isSprinting && stamina > 0) ? 1.5 : 0.8;
-            if (isSprinting && (moveForward || moveBackward || moveLeft || moveRight)) {
-                stamina -= delta * 25;
-            } else {
-                stamina = Math.min(100, stamina + delta * 15);
+        function update(delta) {
+            if(!gameActive) return;
+
+            if(!player.userData.vY) player.userData.vY = 0;
+            player.position.y += player.userData.vY;
+            if(player.position.y > 0) player.userData.vY -= 0.012;
+            else { player.position.y = 0; player.userData.vY = 0; }
+
+            let s = (input.sprint && stats.stamina > 5) ? 13 : 7;
+            if(input.crouching) s = 3.5;
+            
+            if(input.sprint && (Math.abs(input.forward) > 0.1 || Math.abs(input.right) > 0.1)) stats.stamina -= delta * 35;
+            else stats.stamina = Math.min(100, stats.stamina + delta * 18);
+
+            const moveDir = new THREE.Vector3(input.right, 0, -input.forward).normalize();
+            if(moveDir.length() > 0.1) {
+                moveDir.applyAxisAngle(new THREE.Vector3(0,1,0), input.lookX);
+                player.position.add(moveDir.multiplyScalar(s * delta));
+                const tRot = Math.atan2(moveDir.x, moveDir.z);
+                player.rotation.y += (tRot - player.rotation.y) * 0.12;
             }
-            document.getElementById('stamina-bar').style.width = `${stamina}%`;
 
-            velocity.x -= velocity.x * 10.0 * delta;
-            velocity.z -= velocity.z * 10.0 * delta;
+            const h = input.crouching ? 1.8 : 4.5;
+            const cOff = new THREE.Vector3(0, h, 8).applyAxisAngle(new THREE.Vector3(0,1,0), input.lookX);
+            camera.position.lerp(player.position.clone().add(cOff), 0.12);
+            camera.lookAt(player.position.clone().add(new THREE.Vector3(0, 1.2, 0)));
 
-            direction.z = Number(moveForward) - Number(moveBackward);
-            direction.x = Number(moveRight) - Number(moveLeft);
-            direction.normalize();
+            items.forEach((item, i) => {
+                if(player.position.distanceTo(item.position) < 2.2) {
+                    if(item.userData.type === 'scrap') stats.scrap += 1;
+                    else stats.ammo += 5;
+                    scene.remove(item);
+                    scene.remove(item.userData.light);
+                    items.splice(i, 1);
+                    if(stats.tutorialStep === 0 && stats.scrap >= 5) stats.tutorialStep = 1;
+                    if(stats.tutorialStep === 2 && stats.ammo > 0) stats.tutorialStep = 3;
+                    updateUI();
+                }
+            });
 
-            if (moveForward || moveBackward) velocity.z -= direction.z * 400.0 * delta * speed;
-            if (moveLeft || moveRight) velocity.x -= direction.x * 400.0 * delta * speed;
+            const dP = player.position.distanceTo(predator.position);
+            let dR = input.crouching ? 25 : 65;
+            if(input.sprint) dR = 110;
 
-            camera.translateX(-velocity.x * delta);
-            camera.translateZ(velocity.z * delta);
-            camera.position.y = 1.7; // Head height
-
-            // Flashlight follow
-            flashLight.position.copy(camera.position);
-            const vector = new THREE.Vector3(0, 0, -1);
-            vector.applyQuaternion(camera.quaternion);
-            flashLight.target.position.copy(camera.position).add(vector);
-
-            // Predator AI
-            const distToPred = camera.position.distanceTo(predator.position);
-            if (distToPred < 80) {
-                const predDir = new THREE.Vector3().subVectors(camera.position, predator.position).normalize();
-                predator.position.add(predDir.multiplyScalar(delta * 4.5));
-                predator.lookAt(camera.position);
+            if(dP < dR) {
+                const sp = dP < 12 ? 9 : 5;
+                const pD = new THREE.Vector3().subVectors(player.position, predator.position).normalize();
+                let blocked = false;
+                walls.forEach(w => { if(predator.position.distanceTo(w.position) < 3.2) blocked = true; });
+                if(!blocked) predator.position.add(pD.multiplyScalar(sp * delta));
+                predator.lookAt(player.position);
             }
             
-            if (distToPred < 2) {
-                health -= delta * 50;
-                if (health <= 0) endGame("KILLED IN ACTION");
-            }
-            
-            // Win condition
-            if (camera.position.distanceTo(flare.position) < 5) {
-                endGame("EXTRACTION SUCCESSFUL");
+            if(dP < 2.8) {
+                stats.health -= delta * 35;
+                if(stats.health <= 0) endGame("SLAUGHTERED");
+                updateUI();
             }
 
-            document.getElementById('health-bar').style.width = `${health}%`;
+            const distVal = Math.floor(player.position.distanceTo(flare.position));
+            document.getElementById('distance-ui').innerText = distVal + "m";
+            if(distVal < 7) endGame("RESCUED");
         }
 
         function animate() {
             requestAnimationFrame(animate);
-            const delta = clock.getDelta();
-            
-            updatePlayer(delta);
-            
+            update(clock.getDelta());
             renderer.render(scene, camera);
         }
 
-        function endGame(status) {
+        function endGame(st) {
             gameActive = false;
-            document.exitPointerLock();
-            document.getElementById('overlay').style.opacity = "1";
-            document.getElementById('overlay').classList.remove('pointer-events-none');
-            document.getElementById('title').innerText = status;
-            document.getElementById('desc').innerText = status === "EXTRACTION SUCCESSFUL" ? 
-                "You reached the extraction team. You survived the north." : 
-                "The predator caught you. The forest keeps its secrets.";
-            document.getElementById('start-btn').innerText = "Retry Sequence";
+            document.getElementById('menu').style.display = 'flex';
+            document.getElementById('menu-title').innerText = st;
+            document.getElementById('menu-title').style.color = st === "RESCUED" ? "#00ffff" : "#ef4444";
+            document.getElementById('menu-desc').innerText = st === "RESCUED" ? "You made it out alive." : "You were consumed by the void.";
+            document.getElementById('start-btn').innerText = "Restart Cycle";
+            if(document.pointerLockElement) document.exitPointerLock();
         }
 
         document.getElementById('start-btn').onclick = () => {
+            stats = { health: 100, stamina: 100, scrap: 0, ammo: 0, tutorialStep: 0 };
+            player.position.set(0,0,0);
+            predator.position.set(140, 1.5, 140);
+            updateUI();
             gameActive = true;
-            health = 100;
-            stamina = 100;
-            camera.position.set(0, 1.7, 0);
-            predator.position.set(100, 1.25, 100);
-            document.getElementById('overlay').style.opacity = "0";
-            document.getElementById('overlay').classList.add('pointer-events-none');
-            document.body.requestPointerLock();
+            document.getElementById('menu').style.display = 'none';
+            if(!isMobile) document.body.requestPointerLock();
         };
 
         window.addEventListener('resize', () => {
