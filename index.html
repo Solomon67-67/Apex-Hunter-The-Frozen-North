@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Apex Hunter: Frozen North</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Inter', sans-serif; }
+        #crosshair {
+            position: fixed; top: 50%; left: 50%;
+            width: 10px; height: 10px;
+            border: 2px solid rgba(255,255,255,0.5);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+        }
+        .survival-ui {
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+        }
+    </style>
+</head>
+<body>
+
+    <div id="crosshair"></div>
+
+    <!-- HUD -->
+    <div id="hud" class="fixed top-0 left-0 w-full p-8 flex justify-between items-start pointer-events-none z-10">
+        <div class="flex flex-col gap-4">
+            <div class="survival-ui">
+                <div class="text-white text-xs uppercase tracking-widest mb-1 opacity-70">Vital Signs</div>
+                <div class="w-48 h-2 bg-black/50 border border-white/20 rounded-full overflow-hidden">
+                    <div id="health-bar" class="h-full bg-red-600 transition-all duration-300" style="width: 100%"></div>
+                </div>
+            </div>
+            <div class="survival-ui">
+                <div class="text-white text-xs uppercase tracking-widest mb-1 opacity-70">Stamina</div>
+                <div class="w-48 h-2 bg-black/50 border border-white/20 rounded-full overflow-hidden">
+                    <div id="stamina-bar" class="h-full bg-blue-500 transition-all duration-300" style="width: 100%"></div>
+                </div>
+            </div>
+        </div>
+        <div class="text-right survival-ui">
+            <div id="clock" class="text-3xl text-white font-light tracking-tighter">06:00 AM</div>
+            <div class="text-white text-xs uppercase opacity-60">Day 1 - Temperature: -12°C</div>
+        </div>
+    </div>
+
+    <!-- START/OVER SCREENS -->
+    <div id="overlay" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm transition-opacity duration-1000">
+        <div class="text-center max-w-lg p-10 bg-zinc-900/50 border border-white/10 rounded-xl">
+            <h1 id="title" class="text-5xl text-white font-bold tracking-tighter mb-4">APEX HUNTER</h1>
+            <p id="desc" class="text-zinc-400 mb-8 leading-relaxed">
+                You are stranded in the Siberian wilderness. <br>
+                Find the extraction point marked by the blue flare.<br>
+                Watch your stamina. Something is tracking you.
+            </p>
+            <button id="start-btn" class="px-8 py-3 bg-white text-black font-bold uppercase tracking-widest hover:bg-zinc-200 transition-colors">
+                Begin Survival
+            </button>
+            <p class="mt-6 text-[10px] text-zinc-500 uppercase tracking-widest">WASD to Move | Shift to Sprint | Mouse to Look</p>
+        </div>
+    </div>
+
+    <script>
+        let scene, camera, renderer, clock, player, flashLight;
+        let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false, canJump = false, isSprinting = false;
+        let velocity = new THREE.Vector3();
+        let direction = new THREE.Vector3();
+        let health = 100, stamina = 100;
+        let gameActive = false;
+        let trees = [];
+        let predator;
+        let flare;
+
+        const objects = [];
+
+        function init() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x050508);
+            scene.fog = new THREE.FogExp2(0x050508, 0.015);
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            
+            // Lighting
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.5);
+            scene.add(ambientLight);
+
+            const moonLight = new THREE.DirectionalLight(0x334455, 0.5);
+            moonLight.position.set(50, 100, 50);
+            scene.add(moonLight);
+
+            // Flashlight (Attached to camera later)
+            flashLight = new THREE.SpotLight(0xffffff, 1, 40, Math.PI/6, 0.5);
+            scene.add(flashLight);
+            scene.add(flashLight.target);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            document.body.appendChild(renderer.domElement);
+
+            clock = new THREE.Clock();
+
+            createWorld();
+            setupControls();
+            
+            animate();
+        }
+
+        function createWorld() {
+            // Ground (Snow)
+            const groundGeo = new THREE.PlaneGeometry(1000, 1000, 100, 100);
+            groundGeo.rotateX(-Math.PI / 2);
+            
+            // Randomize terrain heights
+            const vertices = groundGeo.attributes.position.array;
+            for (let i = 0; i < vertices.length; i += 3) {
+                vertices[i + 1] = Math.random() * 2;
+            }
+            
+            const groundMat = new THREE.MeshStandardMaterial({ 
+                color: 0xe0e8ff,
+                roughness: 0.8,
+                metalness: 0.1
+            });
+            const ground = new THREE.Mesh(groundGeo, groundMat);
+            ground.receiveShadow = true;
+            scene.add(ground);
+
+            // Trees
+            for (let i = 0; i < 400; i++) {
+                const x = (Math.random() - 0.5) * 400;
+                const z = (Math.random() - 0.5) * 400;
+                if (Math.abs(x) < 10 && Math.abs(z) < 10) continue; // Clear start area
+                createTree(x, z);
+            }
+
+            // Predator (Simple scary shape)
+            const predGeo = new THREE.BoxGeometry(1, 2.5, 1);
+            const predMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+            predator = new THREE.Mesh(predGeo, predMat);
+            predator.position.set(100, 1.25, 100);
+            scene.add(predator);
+
+            // Extraction Point (Flare)
+            const flareGeo = new THREE.CylinderGeometry(0.1, 0.1, 5, 8);
+            const flareMat = new THREE.MeshBasicMaterial({ color: 0x00ffff });
+            flare = new THREE.Mesh(flareGeo, flareMat);
+            flare.position.set((Math.random()-0.5)*300, 2.5, (Math.random()-0.5)*300);
+            scene.add(flare);
+            
+            const flareLight = new THREE.PointLight(0x00ffff, 2, 50);
+            flareLight.position.copy(flare.position);
+            scene.add(flareLight);
+        }
+
+        function createTree(x, z) {
+            const trunkGeo = new THREE.CylinderGeometry(0.2, 0.4, 4, 8);
+            const trunkMat = new THREE.MeshStandardMaterial({ color: 0x2a1a0a });
+            const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+            trunk.position.set(x, 2, z);
+            trunk.castShadow = true;
+            scene.add(trunk);
+
+            const leavesGeo = new THREE.ConeGeometry(2, 6, 8);
+            const leavesMat = new THREE.MeshStandardMaterial({ color: 0x0a1a0a });
+            const leaves = new THREE.Mesh(leavesGeo, leavesMat);
+            leaves.position.set(x, 5, z);
+            leaves.castShadow = true;
+            scene.add(leaves);
+            
+            trees.push({ x, z, radius: 1 });
+        }
+
+        function setupControls() {
+            const onKeyDown = (event) => {
+                switch (event.code) {
+                    case 'ArrowUp': case 'KeyW': moveForward = true; break;
+                    case 'ArrowLeft': case 'KeyA': moveLeft = true; break;
+                    case 'ArrowDown': case 'KeyS': moveBackward = true; break;
+                    case 'ArrowRight': case 'KeyD': moveRight = true; break;
+                    case 'ShiftLeft': isSprinting = true; break;
+                }
+            };
+            const onKeyUp = (event) => {
+                switch (event.code) {
+                    case 'ArrowUp': case 'KeyW': moveForward = false; break;
+                    case 'ArrowLeft': case 'KeyA': moveLeft = false; break;
+                    case 'ArrowDown': case 'KeyS': moveBackward = false; break;
+                    case 'ArrowRight': case 'KeyD': moveRight = false; break;
+                    case 'ShiftLeft': isSprinting = false; break;
+                }
+            };
+
+            document.addEventListener('keydown', onKeyDown);
+            document.addEventListener('keyup', onKeyUp);
+
+            // Mouse Look
+            document.addEventListener('mousemove', (e) => {
+                if (!gameActive) return;
+                camera.rotation.y -= e.movementX * 0.002;
+                const newRotX = camera.rotation.x - e.movementY * 0.002;
+                camera.rotation.x = Math.max(-Math.PI/2.5, Math.min(Math.PI/2.5, newRotX));
+            });
+
+            document.body.addEventListener('click', () => {
+                if (!gameActive) return;
+                document.body.requestPointerLock();
+            });
+        }
+
+        function updatePlayer(delta) {
+            if (!gameActive) return;
+
+            const speed = (isSprinting && stamina > 0) ? 1.5 : 0.8;
+            if (isSprinting && (moveForward || moveBackward || moveLeft || moveRight)) {
+                stamina -= delta * 25;
+            } else {
+                stamina = Math.min(100, stamina + delta * 15);
+            }
+            document.getElementById('stamina-bar').style.width = `${stamina}%`;
+
+            velocity.x -= velocity.x * 10.0 * delta;
+            velocity.z -= velocity.z * 10.0 * delta;
+
+            direction.z = Number(moveForward) - Number(moveBackward);
+            direction.x = Number(moveRight) - Number(moveLeft);
+            direction.normalize();
+
+            if (moveForward || moveBackward) velocity.z -= direction.z * 400.0 * delta * speed;
+            if (moveLeft || moveRight) velocity.x -= direction.x * 400.0 * delta * speed;
+
+            camera.translateX(-velocity.x * delta);
+            camera.translateZ(velocity.z * delta);
+            camera.position.y = 1.7; // Head height
+
+            // Flashlight follow
+            flashLight.position.copy(camera.position);
+            const vector = new THREE.Vector3(0, 0, -1);
+            vector.applyQuaternion(camera.quaternion);
+            flashLight.target.position.copy(camera.position).add(vector);
+
+            // Predator AI
+            const distToPred = camera.position.distanceTo(predator.position);
+            if (distToPred < 80) {
+                const predDir = new THREE.Vector3().subVectors(camera.position, predator.position).normalize();
+                predator.position.add(predDir.multiplyScalar(delta * 4.5));
+                predator.lookAt(camera.position);
+            }
+            
+            if (distToPred < 2) {
+                health -= delta * 50;
+                if (health <= 0) endGame("KILLED IN ACTION");
+            }
+            
+            // Win condition
+            if (camera.position.distanceTo(flare.position) < 5) {
+                endGame("EXTRACTION SUCCESSFUL");
+            }
+
+            document.getElementById('health-bar').style.width = `${health}%`;
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta();
+            
+            updatePlayer(delta);
+            
+            renderer.render(scene, camera);
+        }
+
+        function endGame(status) {
+            gameActive = false;
+            document.exitPointerLock();
+            document.getElementById('overlay').style.opacity = "1";
+            document.getElementById('overlay').classList.remove('pointer-events-none');
+            document.getElementById('title').innerText = status;
+            document.getElementById('desc').innerText = status === "EXTRACTION SUCCESSFUL" ? 
+                "You reached the extraction team. You survived the north." : 
+                "The predator caught you. The forest keeps its secrets.";
+            document.getElementById('start-btn').innerText = "Retry Sequence";
+        }
+
+        document.getElementById('start-btn').onclick = () => {
+            gameActive = true;
+            health = 100;
+            stamina = 100;
+            camera.position.set(0, 1.7, 0);
+            predator.position.set(100, 1.25, 100);
+            document.getElementById('overlay').style.opacity = "0";
+            document.getElementById('overlay').classList.add('pointer-events-none');
+            document.body.requestPointerLock();
+        };
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        init();
+    </script>
+</body>
+</html>
